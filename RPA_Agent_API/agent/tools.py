@@ -1,5 +1,4 @@
-
-import os
+﻿import os
 import json
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
@@ -11,12 +10,13 @@ from agent.runner import run_workflow_playwright
 CHROMA_DB_DIR = "chroma_db"
 PROCEDURES_DIR = "procedures"
 
-# 1. Herramienta para buscar el procedimiento correcto
+
 @tool
 def search_procedures(query: str) -> str:
     """
-    Util para buscar que procedimiento o workflow se debe ejecutar en base a la peticion del usuario.
-    Recibe la intencion del usuario y devuelve el ID del procedimiento y los parametros que necesita.
+    Busca en la base de datos vectorial el workflow mas adecuado segun la peticion del usuario.
+    Devuelve el ID del procedimiento y el esquema de parametros que necesita para ejecutarse.
+    Usala cuando el usuario quiera realizar alguna accion y necesites saber que workflow usar.
     """
     embeddings = OpenAIEmbeddings(
         base_url="http://localhost:1234/v1",
@@ -24,76 +24,76 @@ def search_procedures(query: str) -> str:
         model="text-embedding-nomic-embed-text-v1.5",
         check_embedding_ctx_length=False
     )
-    
+
     vectorstore = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
     resultados = vectorstore.similarity_search_with_score(query, k=1)
-    
+
     if not resultados:
-        return "No se encontraron procedimientos que coincidan con la peticion."
-        
+        return "No se encontro ningun procedimiento que coincida con la peticion."
+
     doc, score = resultados[0]
     metadata = doc.metadata
-    
+
     return f"Procedimiento encontrado: ID={metadata['filename']}, Schema={metadata['param_schema']}"
 
-# 2. Herramienta para extraer los parametros usando el LLM
+
 @tool
 def extract_parameters(peticion_original: str, param_schema: str) -> dict:
     """
-    Recibe la peticion del usuario y el param_schema. Extrae los datos de la peticion y los devuelve
-    como un diccionario JSON valido con las claves del schema (ej: nombre, precio, stock, categoria).
+    Extrae los parametros necesarios de la peticion del usuario segun el esquema indicado.
+    Devuelve un diccionario con los valores listos para ejecutar el workflow.
+    Usala despues de encontrar el workflow con search_procedures.
     """
     llm = ChatOpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio", temperature=0)
-    
+
     prompt = PromptTemplate.from_template(
-        "Extrae los parametros de la siguiente peticion basandote en este esquema: {schema}\n"
+        "Extrae los parametros de la siguiente peticion segun este esquema: {schema}\n"
         "Peticion: {peticion}\n"
-        "Devuelve UNICAMENTE un JSON valido, sin formato markdown ni texto adicional."
+        "Devuelve solo un JSON valido, sin texto adicional ni bloques de codigo."
     )
-    
+
     cadena = prompt | llm
     respuesta = cadena.invoke({"schema": param_schema, "peticion": peticion_original})
-    
+
+    # a veces el modelo devuelve el json dentro de ```json ... ``` asi que lo limpiamos
     texto_json = respuesta.content.replace("```json", "").replace("```", "").strip()
-    
+
     try:
         return json.loads(texto_json)
     except json.JSONDecodeError:
-        return {"error": "Fallo al extraer parametros. Pide al usuario que aclare los datos."}
+        return {"error": "No se pudieron extraer los parametros. Pide al usuario que aclare los datos."}
 
-# 3. Herramienta para ejecutar el RPA (con Human-in-the-Loop)
+
 @tool
 def run_workflow(workflow_id: str, params: dict) -> str:
     """
-    Ejecuta la automatizacion web (RPA) pasandole el ID del procedimiento y el diccionario de parametros.
-    IMPORTANTE: Antes de ejecutar, SIEMPRE pide confirmacion al usuario mostrando los parametros extraidos.
-    Solo ejecuta si el usuario responde afirmativamente.
+    Ejecuta el RPA con el workflow indicado y los parametros extraidos.
+    Antes de ejecutar pide confirmacion al usuario mostrando los datos que va a usar.
+    Solo ejecuta si el usuario confirma. Si dice que no, cancela la operacion.
     """
-    # --- HUMAN IN THE LOOP ---
-    # Se pausa el agente y se le piden los datos al usuario para que confirme.
-    params_legibles = "\n".join([f"  - {k}: {v}" for k, v in params.items()])
+    # mostramos los datos al usuario y esperamos confirmacion antes de lanzar playwright
+    params_texto = "\n".join([f"  {k}: {v}" for k, v in params.items()])
     confirmacion = interrupt(
-        f"📋 Voy a ejecutar el RPA con estos datos:\n{params_legibles}\n\n"
-        f"¿Confirmas el registro? (responde 'si' o 'no')"
+        f"Voy a registrar el equipo con estos datos:\n{params_texto}\n\nConfirmas? (si / no)"
     )
-    # --- FIN HUMAN IN THE LOOP ---
 
     if confirmacion.strip().lower() not in ["si", "sí", "yes", "s", "ok", "confirmar"]:
-        return "❌ Operacion cancelada por el usuario."
+        return "Operacion cancelada."
 
-    print(f"\n[Ejecutando RPA] Workflow: {workflow_id} | Params: {params}")
+    print(f"[RPA] Ejecutando workflow: {workflow_id} con params: {params}")
     resultado = run_workflow_playwright(workflow_id, params)
 
     if resultado["status"] == "ok":
-        return f"✅ Exito. Duracion: {resultado['duration']}s. Mensaje capturado: {resultado['last_toast']}"
+        return f"Hecho. Tardo {resultado['duration']}s. El formulario mostro: {resultado['last_toast']}"
     else:
-        return f"❌ Error en la automatizacion: {resultado['message']}"
+        return f"Error al ejecutar el RPA: {resultado['message']}"
 
-# 4. Herramienta para listar todos los procedimientos
+
 @tool
 def list_procedures(query: str = "") -> str:
     """
-    Devuelve una lista con todos los procedimientos disponibles en el sistema.
+    Devuelve la lista de todos los workflows disponibles en el sistema.
+    Usala cuando no tengas claro que procedimiento usar o la peticion sea ambigua.
     """
     procedimientos = []
     if os.path.exists(PROCEDURES_DIR):
@@ -102,7 +102,7 @@ def list_procedures(query: str = "") -> str:
                 with open(os.path.join(PROCEDURES_DIR, filename), "r", encoding="utf-8") as f:
                     data = json.load(f)
                     procedimientos.append(f"- {data['id']} ({filename}): {data['titulo']}")
-                    
+
     if procedimientos:
         return "\n".join(procedimientos)
     return "No hay procedimientos registrados."

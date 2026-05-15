@@ -1,5 +1,4 @@
-﻿# -*- coding: utf-8 -*-
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
@@ -18,13 +17,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ChatRequest(BaseModel):
     message: str
-    thread_id: str = "usuario_david_01"
+    thread_id: str = "sesion_david_01"
+
 
 class ResumeRequest(BaseModel):
     confirmation: str
-    thread_id: str = "usuario_david_01"
+    thread_id: str = "sesion_david_01"
+
 
 llm = ChatOpenAI(
     base_url="http://localhost:1234/v1",
@@ -36,61 +38,55 @@ llm = ChatOpenAI(
 tools = [search_procedures, extract_parameters, run_workflow, list_procedures]
 memory = MemorySaver()
 
-system_instructions = """Eres un asistente RPA autonomo. Tu objetivo es ayudar al usuario a registrar hardware.
-Reglas:
-1. Si el usuario pide registrar un producto, usa search_procedures para buscar el workflow.
-2. Luego usa extract_parameters para sacar los datos.
-3. Finalmente usa run_workflow para ejecutar el RPA (pedira confirmacion al usuario automaticamente).
-4. Si faltan datos obligatorios, pregunta al usuario. No inventes datos.
-5. Las categorias validas son: componentes, perifericos, portatiles, redes.
-Responde siempre en espanol."""
+system_prompt = """Eres un asistente que ayuda a registrar equipamiento IT en el sistema.
+Cuando el usuario quiera dar de alta un dispositivo, busca primero el workflow con search_procedures,
+luego extrae los datos con extract_parameters y finalmente ejecuta el RPA con run_workflow.
+Si te faltan datos como el nombre, precio, stock o categoria, pregunta antes de continuar.
+Si la peticion no esta clara, usa list_procedures para ver que opciones hay.
+Responde siempre en espanol y de forma concisa."""
 
 agent = create_react_agent(
     model=llm,
     tools=tools,
     checkpointer=memory,
-    prompt=system_instructions
+    prompt=system_prompt
 )
 
 
-def _run_agent_stream(input_data, config) -> dict:
-    respuesta_final = "No he podido procesar tu solicitud."
+def ejecutar_agente(input_data, config) -> dict:
+    respuesta = "No pude procesar la solicitud."
     for event in agent.stream(input_data, config=config, stream_mode="values"):
+        # si el agente se pausa esperando confirmacion del usuario
         if "__interrupt__" in event:
-            interrupt_info = event["__interrupt__"]
-            mensaje = interrupt_info[0].value if interrupt_info else "Confirmas la operacion?"
+            info = event["__interrupt__"]
+            mensaje = info[0].value if info else "Confirmas la operacion?"
             return {"reply": mensaje, "awaiting_confirmation": True}
-        messages = event.get("messages", [])
-        if messages:
-            ultimo = messages[-1]
+        mensajes = event.get("messages", [])
+        if mensajes:
+            ultimo = mensajes[-1]
             if hasattr(ultimo, "content") and ultimo.content and ultimo.type == "ai":
-                respuesta_final = ultimo.content
-    return {"reply": respuesta_final, "awaiting_confirmation": False}
+                respuesta = ultimo.content
+    return {"reply": respuesta, "awaiting_confirmation": False}
 
 
 @app.post("/chat")
-async def chat_endpoint(request: ChatRequest):
+async def chat(request: ChatRequest):
     config = {"configurable": {"thread_id": request.thread_id}}
-    print(f"\n[API] MAUI dice: {request.message}")
+    print(f"[API] Mensaje recibido: {request.message}")
     try:
-        resultado = _run_agent_stream(
-            {"messages": [HumanMessage(content=request.message)]},
-            config
-        )
-        print(f"[API] Respondiendo: {resultado}")
+        resultado = ejecutar_agente({"messages": [HumanMessage(content=request.message)]}, config)
         return resultado
     except Exception as e:
         print(f"[API] Error: {e}")
-        return {"reply": "Error interno del Agente. Revisa la consola.", "awaiting_confirmation": False}
+        return {"reply": "Error en el agente, revisa la consola.", "awaiting_confirmation": False}
 
 
 @app.post("/resume")
-async def resume_endpoint(request: ResumeRequest):
+async def resume(request: ResumeRequest):
     config = {"configurable": {"thread_id": request.thread_id}}
-    print(f"\n[API] Reanudando agente con: '{request.confirmation}'")
+    print(f"[API] Reanudando con respuesta: {request.confirmation}")
     try:
-        resultado = _run_agent_stream(Command(resume=request.confirmation), config)
-        print(f"[API] Respuesta tras reanudar: {resultado}")
+        resultado = ejecutar_agente(Command(resume=request.confirmation), config)
         return resultado
     except Exception as e:
         print(f"[API] Error al reanudar: {e}")

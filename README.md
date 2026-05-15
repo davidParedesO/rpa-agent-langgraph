@@ -1,85 +1,63 @@
-# 🤖 Agente Autónomo RPA + RAG (LangGraph + MAUI)
+﻿# Practica RPA + RAG con LangGraph
 
-Este proyecto es una solución end-to-end que implementa un agente conversacional inteligente capaz de orquestar automatizaciones web (RPA) basándose en procedimientos indexados mediante un sistema RAG.
+Proyecto de la practica de RPA para la asignatura. Consiste en un agente inteligente que puede registrar equipamiento IT en un formulario web de forma automatica a partir de una peticion en lenguaje natural.
 
-## 🏗️ Arquitectura del Sistema
+## Como funciona
 
-El proyecto se divide en dos componentes principales:
-1. **RPA_Agent_API (Backend / Python)**: Contiene el servidor FastAPI, el Agente React construido con LangGraph, el buscador RAG con ChromaDB y el ejecutor RPA usando Playwright.
-2. **RPA_Agent_UI (Frontend / MAUI Blazor)**: Aplicación cliente multiplataforma que se comunica con la API para exponer el chat del agente al usuario final.
+El usuario escribe algo como "da de alta un monitor a 150 euros" y el agente:
+1. Busca en ChromaDB el workflow correcto (search_procedures)
+2. Extrae los parametros de la frase (extract_parameters)
+3. Pide confirmacion antes de ejecutar
+4. Si el usuario confirma, Playwright rellena el formulario automaticamente (run_workflow)
 
-### Diagrama de Arquitectura Simplificado
+## Estructura del proyecto
 
-```mermaid
-graph TD
-    UI[MAUI/Blazor UI] <-->|FastAPI HTTP POST /chat| API[Backend API]
-    API --> Agent[LangGraph ReAct Agent]
-    
-    subgraph Agent Tools
-        Agent -->|1. Busca workflow| ToolSearch[search_procedures]
-        Agent -->|2. Extrae info| ToolExtract[extract_parameters]
-        Agent -->|3. Ejecuta UI| ToolRun[run_workflow]
-    end
-    
-    ToolSearch <-->|Similarity Search| RAG[(Chroma DB)]
-    ToolExtract <--> LLM[(LLM - LM Studio)]
-    Agent <--> LLM
-    
-    ToolRun --> Playwright[Playwright Runner]
-    Playwright -->|Automatiza| WebForm[Local Web Form HTML]
+```
+rpa/
+  RPA_Agent_API/       -> backend Python (FastAPI + agente LangGraph)
+    agent/
+      agent.py         -> construccion del agente y bucle de chat
+      tools.py         -> las 4 herramientas del agente
+      runner.py        -> motor RPA con Playwright
+    rag/
+      index_procedures.py  -> indexa los workflows en ChromaDB
+    shared/
+      templating.py    -> sustituye placeholders en los workflows
+    procedures/        -> workflows JSON grabados con el recorder
+    web_form/
+      index.html       -> formulario + recorder JS integrado
+      server.py        -> servidor local del formulario
+    api.py             -> API FastAPI que expone el agente
+  RPA_Agent_UI/        -> interfaz MAUI Blazor
 ```
 
-### 🧠 Justificación de LangGraph
+## Por que LangGraph y no LangChain clasico
 
-Para la construcción del agente se ha elegido **LangGraph** (`create_react_agent`) en lugar de LangChain clásico. La justificación técnica es:
-- **Gestión de Estado Robusta**: LangGraph permite mantener el historial y el estado intermedio de las invocaciones de herramientas mediante `MemorySaver`, lo que facilita un flujo conversacional multi-turno real.
-- **Flujos Controlados**: Nos otorga mayor granularidad a la hora de estructurar nodos y condicionales (en el futuro, para flujos como pedir confirmación al usuario antes de ejecutar el RPA).
-- **Tool Calling Nativo**: Se adapta perfectamente al estándar actual de invocación de herramientas impulsado por OpenAI, permitiendo que el Agente "razone" qué herramientas llamar, en qué orden y con qué parámetros.
+Use LangGraph porque permite mantener el estado de la conversacion entre turnos con MemorySaver,
+lo que hace posible un chat real multi-turno. Ademas, tiene soporte para interrupciones (interrupt)
+que me permitio implementar la confirmacion antes de ejecutar el RPA sin tener que cablear nada a mano.
+Con LangChain clasico esto seria bastante mas complicado de hacer.
 
-## 🚀 Requisitos Previos
+## Como arrancarlo
 
-- Python 3.11+
-- LM Studio instalado y corriendo localmente (puerto `1234`). Se recomienda usar un modelo ligero como *gemma-2-9b* o *qwen*. Habilitar CORS y API Server.
-- .NET 8 SDK (para la interfaz MAUI Blazor).
-
-## ⚙️ Instalación y Uso
-
-### 1. Servidor del Formulario Local (Web Form)
-Abre una terminal y levanta el servidor que contiene el formulario:
-```bash
+**1. Levantar el formulario web:**
+```
 cd RPA_Agent_API/web_form
 python server.py
 ```
-El formulario y el grabador (Recorder JS) estarán disponibles en `http://localhost:8081`.
 
-### 2. Backend del Agente (FastAPI)
-Abre otra terminal, activa tu entorno virtual y levanta la API:
-```bash
+**2. Indexar los workflows (solo la primera vez):**
+```
 cd RPA_Agent_API
-pip install -r requirements.txt # si no se han instalado las dependencias
-python -m uvicorn api:app --reload --port 8000
+python rag/index_procedures.py
 ```
-La API quedará escuchando en `http://localhost:8000/chat`.
 
-### 3. Interfaz Gráfica (MAUI)
-Abre el proyecto `RPA_Agent_UI` en Visual Studio e inicia el proyecto, o compila vía CLI:
-```bash
-cd RPA_Agent_UI
-dotnet run -f net8.0-windows10.0.19041.0
+**3. Levantar la API:**
 ```
-*(Asegúrate de ajustar el framework target según tu plataforma).*
+cd RPA_Agent_API
+uvicorn api:app --reload --port 8000
+```
 
----
+**4. Abrir RPA_Agent_UI en Visual Studio y ejecutar.**
 
-## 🛠️ Herramientas Implementadas (Tools)
-
-- `search_procedures`: Busca en ChromaDB el workflow más adecuado según la solicitud en lenguaje natural del usuario.
-- `extract_parameters`: Usa el LLM para parsear la intención del usuario y convertirla en un JSON que coincida con el `param_schema` del workflow.
-- `run_workflow`: Emplea Playwright para rellenar los datos en la web destino de manera autónoma.
-- `list_procedures`: Herramienta de apoyo para orientar al agente cuando la petición es vaga.
-
-## 📝 Mejoras Implementadas
-
-* **Agente utilizando LangGraph**: Se cumple la mejora obligatoria (punto 9) estructurando el agente ReAct con `create_react_agent` y uso de Memory.
-* **API FastAPI (Punto 7)**: Se ha desacoplado el agente en un microservicio al que se puede consultar mediante peticiones POST.
-* **Interfaz MAUI/Blazor (Punto 6)**: El usuario interactúa a través de una UI moderna conectada al backend del agente.
+LM Studio tiene que estar corriendo con el servidor local en el puerto 1234.
