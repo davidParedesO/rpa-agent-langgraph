@@ -1,0 +1,88 @@
+{
+    "id": "proc_alta_hardware_01",
+    "titulo": "Alta de Equipamiento IT",
+    "descripcion": "Procedimiento automatizado para registrar nuevo hardware y periféricos en el sistema.",
+    "app": "web_form_local",
+    "url": "http://localhost:8081",
+    "tags": [
+        "hardware",
+        "alta",
+        "it",
+        "inventario"
+    ],
+    "param_schema": {
+        "nombre": "string",
+        "precio": "number",
+        "stock": "number",
+        "categoria": "string"
+    },
+    "steps": [
+        {
+            "type": "wait",
+            "ms": 4058
+        },
+        {
+            "type": "type",
+            "target": {
+                "by": "id",
+                "value": "nombre"
+            },
+            "value": "{{nombre}}"
+        },
+        {
+            "type": "wait",
+            "ms": 3856
+        },
+        {
+            "type": "type",
+            "target": {
+                "by": "id",
+                "value": "precio"
+            },
+            "value": "{{precio}}"
+        },
+        {
+            "type": "wait",
+            "ms": 2067
+        },
+        {
+            "type": "type",
+            "target": {
+                "by": "id",
+                "value": "stock"
+            },
+            "value": "{{stock}}"
+        },
+        {
+            "type": "wait",
+            "ms": 3776
+        },
+        {
+            "type": "select",
+            "target": {
+                "by": "id",
+                "value": "categoria"
+            },
+            "value": "{{categoria}}"
+        },
+        {
+            "type": "wait",
+            "ms": 2138
+        },
+        {
+            "type": "click",
+            "target": {
+                "by": "id",
+                "value": "btn_guardar"
+            }
+        },
+        {
+            "type": "wait_for_text",
+            "target": {
+                "by": "id",
+                "value": "toast"
+            },
+            "contains": "Guardado"
+        }
+    ]
+}

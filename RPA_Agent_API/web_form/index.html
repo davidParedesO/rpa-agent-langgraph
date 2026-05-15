@@ -1,0 +1,189 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Alta de Equipamiento IT - RPA Form</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; display: flex; gap: 40px; background-color: #f4f6f9;}
+        .form-container { width: 400px; padding: 25px; background: white; border: 1px solid #ddd; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input, select { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 12px 15px; cursor: pointer; background: #0d6efd; color: white; border: none; border-radius: 5px; font-weight: bold; width: 100%; transition: 0.3s;}
+        button:hover { background: #0b5ed7; }
+        
+        /* Estilos del Toast */
+        #toast { visibility: hidden; min-width: 250px; background-color: #198754; color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 1; left: 50%; bottom: 30px; font-size: 16px; font-weight: bold; transform: translateX(-50%); box-shadow: 0 4px 6px rgba(0,0,0,0.2);}
+        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+        
+        /* Estilos del Panel del Recorder */
+        .recorder-panel { width: 350px; padding: 20px; background: #212529; color: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);}
+        .recorder-panel h3 { margin-top: 0; color: #dc3545; display: flex; align-items: center; gap: 10px;}
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .recorder-btn { flex: 1; padding: 10px; border-radius: 5px; border: none; color: white; font-weight: bold; cursor: pointer; }
+        .recorder-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        #log { background: #000; color: #0f0; padding: 15px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 12px; border-radius: 5px; border: 1px solid #444; }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h2 style="color: #0d6efd; margin-top: 0;">🚀 Alta de Hardware IT</h2>
+        <form id="productForm">
+            <div class="form-group">
+                <label for="nombre">Modelo del Equipo/Componente:</label>
+                <input type="text" id="nombre" name="nombre" placeholder="Ej: RTX 4090, ThinkPad T14..." required>
+            </div>
+            <div class="form-group">
+                <label for="precio">Precio (EUR):</label>
+                <input type="number" id="precio" name="precio" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="form-group">
+                <label for="stock">Unidades en Stock:</label>
+                <input type="number" id="stock" name="stock" placeholder="Cantidad disponible" required>
+            </div>
+            <div class="form-group">
+                <label for="categoria">Categoría del Dispositivo:</label>
+                <select id="categoria" name="categoria" required>
+                    <option value="">Seleccione categoría...</option>
+                    <option value="portatiles">Portátiles / Laptops</option>
+                    <option value="componentes">Componentes PC (CPU, GPU, RAM)</option>
+                    <option value="perifericos">Periféricos (Monitores, Teclados)</option>
+                    <option value="redes">Equipos de Red (Routers, Switches)</option>
+                </select>
+            </div>
+            <button type="button" id="btn_guardar">Registrar en Inventario</button>
+        </form>
+    </div>
+
+    <div id="toast">Dispositivo Guardado en el Sistema</div>
+
+    <div class="recorder-panel" id="recorderPanel">
+        <h3>🔴 RPA Recorder Engine</h3>
+        <div class="btn-group">
+            <button id="btn_start" class="recorder-btn" style="background:#198754;">Start</button>
+            <button id="btn_stop" class="recorder-btn" style="background:#dc3545;" disabled>Stop</button>
+        </div>
+        <button id="btn_download" class="recorder-btn" style="background:#0dcaf0; color: #000; width: 100%; margin-bottom: 15px;" disabled>Descargar Workflow JSON</button>
+        <p style="margin-bottom: 5px; font-size: 14px; color: #aaa;"><strong>Log de eventos DOM:</strong></p>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        document.getElementById('btn_guardar').addEventListener('click', () => {
+            const form = document.getElementById('productForm');
+            if(form.checkValidity()) {
+                const toast = document.getElementById('toast');
+                toast.className = "show";
+                setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+            } else {
+                form.reportValidity();
+            }
+        });
+
+        // --- LÓGICA DEL RECORDER ---
+        let isRecording = false;
+        let steps = [];
+        let lastActionTime = 0;
+
+        const btnStart = document.getElementById('btn_start');
+        const btnStop = document.getElementById('btn_stop');
+        const btnDownload = document.getElementById('btn_download');
+        const logDiv = document.getElementById('log');
+
+        function logAction(action) {
+            steps.push(action);
+            logDiv.innerHTML += `<div style="margin-bottom: 5px;">> ${JSON.stringify(action)}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function getTarget(targetId, targetName) {
+            if (targetId) return { by: "id", value: targetId };
+            if (targetName) return { by: "name", value: targetName };
+            return null;
+        }
+
+        function addWaitIfNeeded() {
+            const now = Date.now();
+            if (lastActionTime > 0) {
+                const diff = now - lastActionTime;
+                if (diff > 500) {
+                    logAction({ type: "wait", ms: diff });
+                }
+            }
+            lastActionTime = now;
+        }
+
+        btnStart.addEventListener('click', () => {
+            isRecording = true;
+            steps = [];
+            logDiv.innerHTML = "<div style='color:#0dcaf0;'>> [SYSTEM] Recording started...</div>";
+            btnStart.disabled = true;
+            btnStop.disabled = false;
+            btnDownload.disabled = true;
+            lastActionTime = Date.now();
+        });
+
+        btnStop.addEventListener('click', () => {
+            isRecording = false;
+            logAction({
+                type: "wait_for_text",
+                target: { by: "id", value: "toast" },
+                contains: "Guardado"
+            });
+            logDiv.innerHTML += "<div style='color:#dc3545;'>> [SYSTEM] Recording stopped.</div>";
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+            btnDownload.disabled = false;
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!isRecording || e.target.closest('#recorderPanel')) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            addWaitIfNeeded();
+            const target = getTarget(e.target.id, e.target.name);
+            if (target) logAction({ type: "click", target: target });
+        });
+
+        document.addEventListener('change', (e) => {
+            if (!isRecording || e.target.closest('#recorderPanel')) return;
+            addWaitIfNeeded();
+            const target = getTarget(e.target.id, e.target.name);
+            if (target) {
+                const placeholderValue = `{{${e.target.name || e.target.id}}}`;
+                if (e.target.tagName === 'SELECT') {
+                    logAction({ type: "select", target: target, value: placeholderValue });
+                } else {
+                    logAction({ type: "type", target: target, value: placeholderValue });
+                }
+            }
+        });
+
+        btnDownload.addEventListener('click', () => {
+            const workflow = {
+                id: "proc_alta_hardware_01",
+                titulo: "Alta de Equipamiento IT",
+                descripcion: "Procedimiento automatizado para registrar nuevo hardware y periféricos en el sistema.",
+                app: "web_form_local",
+                url: "http://localhost:8081",
+                tags: ["hardware", "alta", "it", "inventario"],
+                param_schema: {
+                    nombre: "string",
+                    precio: "number",
+                    stock: "number",
+                    categoria: "string"
+                },
+                steps: steps
+            };
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(workflow, null, 4));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "alta_hardware_v1.workflow.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        });
+    </script>
+</body>
+</html>
