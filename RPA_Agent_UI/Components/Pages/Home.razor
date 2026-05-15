@@ -1,0 +1,171 @@
+﻿@page "/"
+@using System.Net.Http
+@using System.Net.Http.Json
+@using System.Text.Json
+
+<div class="chat-container">
+    <div class="chat-header">
+        <div class="avatar-bot">🤖</div>
+        <div class="header-info">
+            <h2>Agente RPA Autónomo</h2>
+            <span class="status">En línea</span>
+        </div>
+    </div>
+
+    <div class="chat-history" id="chat-history">
+        @foreach (var msg in messages)
+        {
+            <div class="message-wrapper @(msg.Role == "user" ? "wrapper-user" : "wrapper-bot")">
+                <div class="message @msg.Role">
+                    @msg.Content
+                </div>
+            </div>
+        }
+
+        @if (isTyping)
+        {
+            <div class="message-wrapper wrapper-bot">
+                <div class="message bot typing-indicator">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="input-area">
+        <input type="text" @bind="userInput" @bind:event="oninput" @onkeyup="HandleKeyUp" placeholder="Dile al agente qué quieres registrar..." />
+        <button @onclick="SendMessage" disabled="@isTyping">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<style>
+    /* ESTILOS MODERNOS DEL CHAT */
+    html, body { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e1e; }
+
+    .chat-container {
+        display: flex;
+        flex-direction: column;
+        /* LA MAGIA AQUÍ: Usamos un 88% de la pantalla para evitar los márgenes de Windows/MAUI */
+        height: 88vh;
+        max-width: 800px;
+        margin: 20px auto; /* Añade un margen arriba y lo centra */
+        background-color: #ffffff;
+        /* ESTÉTICA MEJORADA */
+        border-radius: 16px; /* Bordes redondeados como en WhatsApp/Telegram */
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15); /* Sombra elegante */
+        overflow: hidden; /* Garantiza que nada (ni el input) se salga de la caja */
+    }
+    .chat-header { display: flex; align-items: center; padding: 15px 20px; background-color: #f8f9fa; border-bottom: 1px solid #eaeaea; }
+    .avatar-bot { font-size: 2.5rem; margin-right: 15px; }
+    .header-info h2 { margin: 0; font-size: 1.2rem; color: #333; }
+    .status { color: #28a745; font-size: 0.9rem; font-weight: 600; }
+    .status::before { content: '●'; margin-right: 5px; }
+
+    .chat-history { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background-color: #f0f2f5; scroll-behavior: smooth; }
+
+    .message-wrapper { display: flex; width: 100%; }
+    .wrapper-user { justify-content: flex-end; }
+    .wrapper-bot { justify-content: flex-start; }
+
+    .message { max-width: 75%; padding: 12px 18px; border-radius: 18px; font-size: 1rem; line-height: 1.4; word-wrap: break-word; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+
+    .message.user { background: linear-gradient(135deg, #007bff, #0056b3); color: white; border-bottom-right-radius: 4px; }
+    .message.bot { background-color: #ffffff; color: #333; border-bottom-left-radius: 4px; border: 1px solid #e9ecef; }
+
+    .input-area { display: flex; padding: 15px 20px; background-color: #ffffff; border-top: 1px solid #eaeaea; gap: 10px; }
+    .input-area input { flex-grow: 1; padding: 15px 20px; border: 1px solid #ccc; border-radius: 30px; font-size: 1rem; outline: none; transition: border-color 0.3s; }
+    .input-area input:focus { border-color: #007bff; }
+    .input-area button { width: 50px; height: 50px; border-radius: 50%; background-color: #007bff; color: white; border: none; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: transform 0.2s, background-color 0.3s; }
+    .input-area button:hover:not(:disabled) { background-color: #0056b3; transform: scale(1.05); }
+    .input-area button:disabled { background-color: #ccc; cursor: not-allowed; }
+    .input-area button svg { width: 20px; height: 20px; }
+
+    /* ANIMACIÓN DE ESCRIBIENDO... */
+    .typing-indicator { display: flex; align-items: center; gap: 6px; padding: 15px 20px !important; }
+    .dot { width: 8px; height: 8px; background-color: #888; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+    .dot:nth-child(1) { animation-delay: -0.32s; }
+    .dot:nth-child(2) { animation-delay: -0.16s; }
+
+    @@keyframes bounce {
+        0%, 80%, 100% { transform: scale(0); }
+        40% { transform: scale(1); }
+    }
+</style>
+
+@code {
+    private string userInput = "";
+    private bool isTyping = false;
+
+    // Aquí guardamos el historial del chat
+    private List<ChatMessage> messages = new()
+    {
+        new ChatMessage { Role = "bot", Content = "¡Hola! Soy tu Agente RPA. Dime qué hardware necesitas registrar hoy." }
+    };
+
+    // Esto detecta si le das al 'Enter' en el teclado
+    private async Task HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(userInput)) return;
+
+        // 1. Guardar y mostrar el mensaje del usuario
+        var textToSend = userInput;
+        userInput = ""; // Vaciamos la caja de texto rápido
+        messages.Add(new ChatMessage { Role = "user", Content = textToSend });
+
+        // 2. Activar la animación de "escribiendo..."
+        isTyping = true;
+        StateHasChanged(); // Forzamos a la pantalla a redibujarse
+
+        try
+        {
+            // 1. Creamos el cliente
+            HttpClient client = new HttpClient();
+
+            // 2. LA SOLUCIÓN: Le damos 5 minutos de margen (300 segundos)
+            // para que a Qwen 30B le dé tiempo a procesar todo sin prisas
+            client.Timeout = TimeSpan.FromSeconds(300);
+
+            var response = await client.PostAsJsonAsync("http://localhost:8000/chat", new { message = textToSend });
+            var result = await response.Content.ReadFromJsonAsync<BotResponse>();
+
+            messages.Add(new ChatMessage { Role = "bot", Content = result.Reply });
+        }
+        catch (Exception)
+        {
+            messages.Add(new ChatMessage { Role = "bot", Content = "Upps, no me he podido conectar con el cerebro Python." });
+        }
+        finally
+        {
+            // 3. Quitar la animación de "escribiendo..."
+            isTyping = false;
+            StateHasChanged();
+        }
+    }
+
+    // Clases auxiliares para los datos
+    public class ChatMessage
+    {
+        public string Role { get; set; }
+        public string Content { get; set; }
+    }
+
+    public class BotResponse
+    {
+        public string Reply { get; set; }
+    }
+}
