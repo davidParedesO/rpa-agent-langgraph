@@ -1,0 +1,17 @@
+# Agente y LLM
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-chroma>=0.1.4
+langgraph>=0.2.0
+
+# API
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.0.0
+
+# Automatizacion web
+playwright>=1.47.0
+
+# Base de datos vectorial
+chromadb>=0.5.0

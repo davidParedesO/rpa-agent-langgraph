@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -73,6 +73,15 @@
         document.getElementById('btn_guardar').addEventListener('click', () => {
             const form = document.getElementById('productForm');
             if(form.checkValidity()) {
+                // enviamos los datos al servidor para que los guarde
+                const datos = new URLSearchParams({
+                    nombre: document.getElementById('nombre').value,
+                    precio: document.getElementById('precio').value,
+                    stock: document.getElementById('stock').value,
+                    categoria: document.getElementById('categoria').value
+                });
+                fetch('/guardar', { method: 'POST', body: datos });
+
                 const toast = document.getElementById('toast');
                 toast.className = "show";
                 setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);

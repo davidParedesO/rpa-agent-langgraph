@@ -20,12 +20,12 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
-    thread_id: str = "sesion_david_01"
+    thread_id: str = "sesion_david_03"
 
 
 class ResumeRequest(BaseModel):
     confirmation: str
-    thread_id: str = "sesion_david_01"
+    thread_id: str = "sesion_david_03"
 
 
 llm = ChatOpenAI(
@@ -38,12 +38,19 @@ llm = ChatOpenAI(
 tools = [search_procedures, extract_parameters, run_workflow, list_procedures]
 memory = MemorySaver()
 
-system_prompt = """Eres un asistente que ayuda a registrar equipamiento IT en el sistema.
-Cuando el usuario quiera dar de alta un dispositivo, busca primero el workflow con search_procedures,
-luego extrae los datos con extract_parameters y finalmente ejecuta el RPA con run_workflow.
-Si te faltan datos como el nombre, precio, stock o categoria, pregunta antes de continuar.
-Si la peticion no esta clara, usa list_procedures para ver que opciones hay.
-Responde siempre en espanol y de forma concisa."""
+system_prompt = """Eres un asistente que ayuda a registrar equipamiento IT. 
+REGLA CRÍTICA: Cuando pases la categoría a la herramienta run_workflow, usa EXACTAMENTE uno de estos nombres (con sus paréntesis y tildes):
+- "Portátiles / Laptops"
+- "Componentes PC (CPU, GPU, RAM)"
+- "Periféricos (Monitores, Teclados)"
+- "Equipos de Red (Routers, Switches)"
+
+Pasos:
+1. Busca el workflow.
+2. Extrae datos.
+3. Pide confirmación al usuario.
+4. Ejecuta run_workflow solo si el usuario dice 'si'.
+Responde siempre en español."""
 
 agent = create_react_agent(
     model=llm,
@@ -80,14 +87,18 @@ async def chat(request: ChatRequest):
         print(f"[API] Error: {e}")
         return {"reply": "Error en el agente, revisa la consola.", "awaiting_confirmation": False}
 
-
 @app.post("/resume")
-async def resume(request: ResumeRequest):
+async def resume_endpoint(request: ResumeRequest):
     config = {"configurable": {"thread_id": request.thread_id}}
-    print(f"[API] Reanudando con respuesta: {request.confirmation}")
+    print(f"\n[API] Reanudando agente con: '{request.confirmation}'")
     try:
         resultado = ejecutar_agente(Command(resume=request.confirmation), config)
+        print(f"[API] Respuesta tras reanudar: {resultado}")
         return resultado
     except Exception as e:
         print(f"[API] Error al reanudar: {e}")
         return {"reply": "Error al reanudar el agente.", "awaiting_confirmation": False}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
